@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowRight, CheckCircle2, Star, Shield, Brain, Heart, MessageCircleQuestion } from 'lucide-react';
 import { PRODUCTS, TESTIMONIALS } from '@/constants';
 import ProductCard from '@/components/ProductCard';
@@ -162,11 +163,16 @@ export default function Home() {
             <div className="flex flex-col lg:flex-row items-center gap-16">
                <div className="flex-1 relative">
                   <div className="absolute top-0 left-0 w-full h-full bg-brand-gold rounded-full blur-[100px] opacity-20"></div>
-                  <img 
-                     src="https://picsum.photos/seed/isaacteacher/600/700" 
-                     alt="Isaac Cronin teaching" 
-                     className="relative z-10 rounded-2xl shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-500 w-full object-cover h-[500px]" 
-                  />
+                  <div className="relative z-10 rounded-2xl shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-500 w-full overflow-hidden h-[500px]">
+                    <Image 
+                       src="/isaac-profile-picture.png" 
+                       alt="Isaac Cronin teaching" 
+                       width={600}
+                       height={700}
+                       className="w-full h-full object-cover" 
+                       priority
+                    />
+                  </div>
                   <div className="absolute bottom-10 -right-6 bg-white text-brand-indigo p-6 rounded-xl shadow-xl z-20 max-w-xs hidden md:block">
                      <p className="font-accent italic text-lg mb-2">"The best way to predict the future is to create it."</p>
                      <p className="text-xs font-bold uppercase tracking-widest text-gray-400">- Abraham Lincoln</p>

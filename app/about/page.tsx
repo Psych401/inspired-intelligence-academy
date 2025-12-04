@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { OWNER_NAME } from '@/constants';
 import { Heart, Lightbulb, Users } from 'lucide-react';
 
@@ -18,10 +19,12 @@ export default function About() {
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
            <div className="grid md:grid-cols-2">
               <div className="h-96 md:h-auto relative">
-                 <img 
-                    src="https://picsum.photos/seed/isaac/800/1000" 
+                 <Image 
+                    src="/isaac-profile-picture.png" 
                     alt={OWNER_NAME} 
-                    className="absolute inset-0 w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    priority
                  />
               </div>
               <div className="p-10 md:p-14 flex flex-col justify-center">
