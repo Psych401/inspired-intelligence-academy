@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Menu, X, ShoppingBag, Sparkles } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Menu, X, ShoppingBag, Sparkles, User, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, profile, signOut, loading } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -73,15 +76,47 @@ const Navbar: React.FC = () => {
 
             {/* Desktop CTA */}
             <div className="hidden md:flex items-center gap-4">
-               <Link href="/contact" className="text-sm font-medium text-gray-500 hover:text-brand-indigo transition-colors">
-                 Login
-               </Link>
-               <Link 
-                href="/shop" 
-                className="px-6 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
-              >
-                <ShoppingBag size={16} /> Shop
-              </Link>
+              {loading ? (
+                <div className="w-8 h-8 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin"></div>
+              ) : user ? (
+                <>
+                  <Link 
+                    href="/dashboard" 
+                    className="text-sm font-medium text-gray-500 hover:text-brand-indigo transition-colors flex items-center gap-2"
+                  >
+                    <User size={16} />
+                    {profile?.username || 'Dashboard'}
+                  </Link>
+                  <button
+                    onClick={async () => {
+                      await signOut();
+                      router.push('/');
+                    }}
+                    className="text-sm font-medium text-gray-500 hover:text-brand-indigo transition-colors flex items-center gap-2"
+                  >
+                    <LogOut size={16} />
+                    Logout
+                  </button>
+                  <Link 
+                    href="/shop" 
+                    className="px-6 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
+                  >
+                    <ShoppingBag size={16} /> Shop
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/auth/login" className="text-sm font-medium text-gray-500 hover:text-brand-indigo transition-colors">
+                    Login
+                  </Link>
+                  <Link 
+                    href="/shop" 
+                    className="px-6 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
+                  >
+                    <ShoppingBag size={16} /> Shop
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -116,13 +151,37 @@ const Navbar: React.FC = () => {
                >
                   Browse Shop
                </Link>
-               <Link
-                  href="/contact"
-                  onClick={() => setIsOpen(false)}
-                  className="w-full py-4 text-gray-500 font-medium text-center"
-               >
-                  Login
-               </Link>
+               {user ? (
+                 <>
+                   <Link
+                     href="/dashboard"
+                     onClick={() => setIsOpen(false)}
+                     className="w-full py-4 text-gray-500 font-medium text-center flex items-center justify-center gap-2"
+                   >
+                     <User size={20} />
+                     Dashboard
+                   </Link>
+                   <button
+                     onClick={async () => {
+                       await signOut();
+                       setIsOpen(false);
+                       router.push('/');
+                     }}
+                     className="w-full py-4 text-gray-500 font-medium text-center flex items-center justify-center gap-2"
+                   >
+                     <LogOut size={20} />
+                     Logout
+                   </button>
+                 </>
+               ) : (
+                 <Link
+                   href="/auth/login"
+                   onClick={() => setIsOpen(false)}
+                   className="w-full py-4 text-gray-500 font-medium text-center"
+                 >
+                   Login
+                 </Link>
+               )}
              </div>
         </div>
       </nav>
