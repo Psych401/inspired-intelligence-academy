@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, X, ShoppingBag, Sparkles, User, LogOut } from 'lucide-react';
+import { Menu, X, ShoppingBag, Sparkles, User, LogOut, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCart } from '@/contexts/CartContext';
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,6 +13,7 @@ const Navbar: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { user, profile, signOut, loading } = useAuth();
+  const { totalItems } = useCart();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -98,10 +100,16 @@ const Navbar: React.FC = () => {
                     Logout
                   </button>
                   <Link 
-                    href="/shop" 
-                    className="px-6 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
+                    href="/cart" 
+                    className="relative px-4 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
                   >
-                    <ShoppingBag size={16} /> Shop
+                    <ShoppingCart size={18} />
+                    Cart
+                    {totalItems > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-brand-gold text-brand-indigo text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                        {totalItems > 9 ? '9+' : totalItems}
+                      </span>
+                    )}
                   </Link>
                 </>
               ) : (
@@ -110,10 +118,16 @@ const Navbar: React.FC = () => {
                     Login
                   </Link>
                   <Link 
-                    href="/shop" 
-                    className="px-6 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
+                    href="/cart" 
+                    className="relative px-4 py-2.5 bg-brand-indigo text-white rounded-lg text-sm font-bold hover:bg-brand-blue hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-indigo/10 flex items-center gap-2"
                   >
-                    <ShoppingBag size={16} /> Shop
+                    <ShoppingCart size={18} />
+                    Cart
+                    {totalItems > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-brand-gold text-brand-indigo text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                        {totalItems > 9 ? '9+' : totalItems}
+                      </span>
+                    )}
                   </Link>
                 </>
               )}
@@ -145,11 +159,17 @@ const Navbar: React.FC = () => {
                   </Link>
                ))}
                <Link
-                  href="/shop"
+                  href="/cart"
                   onClick={() => setIsOpen(false)}
-                  className="w-full py-4 mt-4 bg-brand-indigo text-white rounded-xl font-bold text-center text-lg shadow-xl"
+                  className="relative w-full py-4 mt-4 bg-brand-indigo text-white rounded-xl font-bold text-center text-lg shadow-xl flex items-center justify-center gap-2"
                >
-                  Browse Shop
+                  <ShoppingCart size={20} />
+                  Cart
+                  {totalItems > 0 && (
+                    <span className="bg-brand-gold text-brand-indigo text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                      {totalItems > 9 ? '9+' : totalItems}
+                    </span>
+                  )}
                </Link>
                {user ? (
                  <>

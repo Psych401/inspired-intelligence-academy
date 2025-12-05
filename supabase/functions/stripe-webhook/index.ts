@@ -187,28 +187,88 @@ serve(async (req) => {
             })
             .eq('id', payment.id);
 
-          // If payment succeeded, create purchase record
+          // If payment succeeded, create purchase records
           if (paymentIntent?.status === 'succeeded' && session.metadata?.user_id) {
             const userId = session.metadata.user_id;
-            const productId = session.metadata.product_id;
-            const productTitle = session.metadata.product_title;
+            
+            // Handle both single product and multiple products (cart checkout)
+            // Check for product_ids (new format, always set) first, then fall back to product_id (old format for backward compatibility)
+            let productIdsStr = session.metadata.product_ids;
+            
+            // Backward compatibility: if product_ids not found, try product_id (singular)
+            if (!productIdsStr && session.metadata.product_id) {
+              productIdsStr = session.metadata.product_id;
+            }
+            
+            const productIds: string[] = productIdsStr 
+              ? (productIdsStr.includes(',') ? productIdsStr.split(',').map(id => id.trim()) : [productIdsStr.trim()])
+              : [];
 
-            // Check if purchase already exists
-            // Note: We check by user_id and product_id to avoid duplicates
-            // The stripe_checkout_session_id may not exist in the schema yet
-            const { data: existingPurchase } = await supabaseClient
-              .from('purchases')
-              .select('id')
-              .eq('user_id', userId)
-              .eq('product_id', productId)
-              .maybeSingle();
+            if (productIds.length === 0) {
+              console.error('No product IDs found in session metadata');
+              break;
+            }
 
-            if (!existingPurchase) {
-              // Get product details from payment metadata
-              const productDescription = payment.metadata?.product_description || '';
-              const productCategory = payment.metadata?.product_category || '';
-              const productImageUrl = payment.metadata?.product_image_url || '';
-              const productPrice = Number(payment.amount);
+            console.log(`Creating purchase records for ${productIds.length} product(s):`, productIds);
+
+            // Get product details from payment metadata or use product list
+            const productIdsFromMetadata = payment.metadata?.product_ids || [];
+            const productDescriptions = payment.metadata?.product_descriptions 
+              ? payment.metadata.product_descriptions.split(' | ')
+              : [];
+            const productCategories = payment.metadata?.product_categories
+              ? payment.metadata.product_categories.split(', ')
+              : [];
+            const productImageUrls = payment.metadata?.product_image_urls
+              ? payment.metadata.product_image_urls.split(', ')
+              : [];
+
+            // Product list for fallback (should match create-checkout function)
+            const products: any[] = [
+              { id: '1', title: 'AI for Absolute Beginners', description: 'The ultimate starting point. Learn the basics of ChatGPT and Gemini without the jargon.', price: 49.99, category: 'Full Course', imageUrl: 'https://picsum.photos/id/1/600/400' },
+              { id: '2', title: 'Everyday Productivity Cheat Sheet', description: 'A handy PDF guide with 50 practical prompts to save you time at home and work.', price: 12.99, category: 'PDF Guide', imageUrl: 'https://picsum.photos/id/20/600/400' },
+              { id: '3', title: 'The "Friendly Tutor" GPT', description: 'A custom GPT configuration designed to explain complex topics like you are 5 years old.', price: 19.99, category: 'Custom GPT', imageUrl: 'https://picsum.photos/id/60/600/400' },
+              { id: '4', title: 'Weekend AI Workshop', description: 'A mini-course designed to get you up and running with image generation in just 2 days.', price: 29.99, category: 'Mini-Course', imageUrl: 'https://picsum.photos/id/96/600/400' },
+              { id: '5', title: 'The Complete Starter Bundle', description: 'Get the beginner course, the cheat sheet, and the workshop in one discounted package.', price: 79.99, category: 'Bundle', imageUrl: 'https://picsum.photos/id/201/600/400' },
+            ];
+
+            // Create purchase records for each product
+            const purchaseRecords = [];
+            
+            for (let i = 0; i < productIds.length; i++) {
+              const productId = productIds[i].trim();
+              
+              // Find product details
+              const productFromList = products.find(p => p.id === productId);
+              
+              // Use metadata if available, otherwise use product list
+              const productTitle = productFromList?.title || session.metadata.product_titles?.split(', ')[i] || 'Product';
+              const productDescription = productDescriptions[i] || productFromList?.description || '';
+              const productCategory = productCategories[i] || productFromList?.category || '';
+              const productImageUrl = productImageUrls[i] || productFromList?.imageUrl || '';
+              
+              // Use product price from list (more accurate than dividing total)
+              // For single product purchases, payment.amount is the product price
+              const productPrice = productFromList?.price || (productIds.length === 1 ? Number(payment.amount) : 0);
+              
+              if (!productFromList && productPrice === 0) {
+                console.error(`Product ${productId} not found in product list and cannot determine price`);
+                continue;
+              }
+
+              // Check if purchase already exists for this product and session
+              const { data: existingPurchase } = await supabaseClient
+                .from('purchases')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('product_id', productId)
+                .eq('stripe_checkout_session_id', session.id)
+                .maybeSingle();
+
+              if (existingPurchase) {
+                console.log(`Purchase already exists for product ${productId}, skipping`);
+                continue;
+              }
 
               // Create purchase record
               const purchaseData: any = {
@@ -229,13 +289,12 @@ serve(async (req) => {
                 .single();
 
               if (purchaseError) {
-                console.error('Error creating purchase:', purchaseError);
+                console.error(`Error creating purchase for product ${productId}:`, purchaseError);
                 
                 // If the error is about missing column, try without stripe_checkout_session_id
                 if (purchaseError.message?.includes('stripe_checkout_session_id') || 
                     purchaseError.code === 'PGRST204') {
                   console.warn('stripe_checkout_session_id column not found, retrying without it');
-                  console.warn('Please run the migration: database/migrations/add-stripe-checkout-session-to-purchases.sql');
                   
                   // Retry without stripe_checkout_session_id
                   const { data: purchaseRetry, error: retryError } = await supabaseClient
@@ -253,22 +312,26 @@ serve(async (req) => {
                     .single();
                   
                   if (retryError) {
-                    console.error('Error creating purchase (retry):', retryError);
+                    console.error(`Error creating purchase (retry) for product ${productId}:`, retryError);
                   } else if (purchaseRetry) {
-                    // Link purchase to payment
-                    await supabaseClient
-                      .from('payments')
-                      .update({ purchase_id: purchaseRetry.id })
-                      .eq('id', payment.id);
+                    purchaseRecords.push(purchaseRetry);
+                    console.log(`✅ Created purchase record for product: ${productTitle}`);
                   }
                 }
               } else if (purchase) {
-                // Link purchase to payment
-                await supabaseClient
-                  .from('payments')
-                  .update({ purchase_id: purchase.id })
-                  .eq('id', payment.id);
+                purchaseRecords.push(purchase);
+                console.log(`✅ Created purchase record for product: ${productTitle}`);
               }
+            }
+
+            // Link first purchase to payment (for backward compatibility)
+            if (purchaseRecords.length > 0) {
+              await supabaseClient
+                .from('payments')
+                .update({ purchase_id: purchaseRecords[0].id })
+                .eq('id', payment.id);
+              
+              console.log(`✅ Created ${purchaseRecords.length} purchase record(s) for checkout session ${session.id}`);
             }
           }
         }

@@ -60,6 +60,69 @@ export async function createCheckoutSession(productId: string): Promise<{
 }
 
 /**
+ * Create a Stripe Checkout Session for multiple products (cart checkout)
+ * 
+ * @param productIds - Array of product IDs to purchase
+ * @returns The checkout session URL or error
+ */
+export async function createCartCheckoutSession(productIds: string[]): Promise<{
+  url: string | null;
+  error: string | null;
+}> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      return { url: null, error: 'Supabase URL not configured' };
+    }
+
+    // Get the current session
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      supabaseUrl,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      return { url: null, error: 'You must be logged in to make a purchase' };
+    }
+
+    // Validate productIds
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return { url: null, error: 'At least one product is required' };
+    }
+
+    // Call the Edge Function with multiple product IDs
+    const requestBody = { productIds };
+    console.log('Sending checkout request:', requestBody);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/create-checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { url: null, error: data.error || 'Failed to create checkout session' };
+    }
+
+    return { url: data.url, error: null };
+  } catch (error: any) {
+    console.error('Error creating checkout session:', error);
+    return { url: null, error: error.message || 'An unexpected error occurred' };
+  }
+}
+
+/**
  * Retrieve a Stripe Checkout Session
  * 
  * @param sessionId - The Stripe checkout session ID

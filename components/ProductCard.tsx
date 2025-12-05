@@ -1,7 +1,6 @@
 import React from 'react';
 import { Product } from '@/types';
-import { ArrowRight, CheckCircle } from 'lucide-react';
-import CheckoutButton from './CheckoutButton';
+import AddToCartButton from './AddToCartButton';
 
 interface ProductCardProps {
   product: Product;
@@ -36,7 +35,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
         
         <div className="mt-auto flex items-center justify-between">
           <span className="font-bold text-2xl text-brand-gray">€{product.price.toFixed(2)}</span>
-          <CheckoutButton product={product} variant="default" />
+          <AddToCartButton product={product} variant="default" />
         </div>
       </div>
     </div>

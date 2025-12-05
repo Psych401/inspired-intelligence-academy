@@ -89,12 +89,47 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    // Parse request body
-    const { productId } = await req.json();
-
-    if (!productId) {
-      throw new Error('productId is required');
+    // Parse request body - support both single productId and array of productIds
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      throw new Error('Invalid request body format');
     }
+
+    console.log('Received request body:', JSON.stringify(body));
+
+    const { productId, productIds } = body;
+
+    // Determine which products to checkout
+    // Handle both single productId (string) and productIds (array)
+    let requestedProductIds: string[] = [];
+    
+    if (productIds !== undefined && productIds !== null) {
+      if (Array.isArray(productIds) && productIds.length > 0) {
+        // Multiple products from cart
+        requestedProductIds = productIds.filter((id: any) => typeof id === 'string' && id.length > 0);
+      } else {
+        console.error('productIds is not a valid array:', productIds);
+        throw new Error('productIds must be a non-empty array of product IDs');
+      }
+    } else if (productId !== undefined && productId !== null) {
+      if (typeof productId === 'string' && productId.length > 0) {
+        // Single product (backward compatibility)
+        requestedProductIds = [productId];
+      } else {
+        console.error('productId is not a valid string:', productId);
+        throw new Error('productId must be a non-empty string');
+      }
+    }
+
+    if (requestedProductIds.length === 0) {
+      console.error('No valid product IDs found in request body:', JSON.stringify(body));
+      throw new Error('productId (string) or productIds (array) is required');
+    }
+
+    console.log(`Processing checkout for ${requestedProductIds.length} product(s):`, requestedProductIds);
 
     // Get product details from constants (you may want to store this in database)
     // For now, we'll use a simple product lookup
@@ -142,10 +177,17 @@ serve(async (req) => {
       },
     ];
 
-    const product = products.find((p) => p.id === productId);
+    // Find all requested products
+    const selectedProducts = requestedProductIds
+      .map((id: string) => products.find((p) => p.id === id))
+      .filter((p): p is Product => p !== undefined);
 
-    if (!product) {
-      throw new Error('Product not found');
+    if (selectedProducts.length === 0) {
+      throw new Error('No valid products found');
+    }
+
+    if (selectedProducts.length !== requestedProductIds.length) {
+      throw new Error('Some products were not found');
     }
 
     // Get or create Stripe customer
@@ -180,49 +222,59 @@ serve(async (req) => {
     // Get the base URL from environment or use a default
     const baseUrl = Deno.env.get('SITE_URL') || 'http://localhost:3000';
 
+    // Create line items for all selected products
+    const lineItems = selectedProducts.map((product) => ({
+      price_data: {
+        currency: 'eur',
+        product_data: {
+          name: product.title,
+          description: product.description,
+          images: product.imageUrl ? [product.imageUrl] : [],
+        },
+        unit_amount: Math.round(product.price * 100), // Convert to cents
+      },
+      quantity: 1,
+    }));
+
+    // Calculate total amount
+    const totalAmount = selectedProducts.reduce((sum, p) => sum + p.price, 0);
+
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: product.title,
-              description: product.description,
-              images: product.imageUrl ? [product.imageUrl] : [],
-            },
-            unit_amount: Math.round(product.price * 100), // Convert to cents
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       mode: 'payment',
       success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/checkout/cancel`,
       metadata: {
         user_id: user.id,
-        product_id: product.id,
-        product_title: product.title,
+        product_ids: requestedProductIds.join(','),
+        product_titles: selectedProducts.map((p) => p.title).join(', '),
       },
       allow_promotion_codes: true,
     });
 
-    // Create a pending payment record
+    // Create pending payment records for each product
+    // For cart checkout, we'll create one payment record with the total
+    // You may want to create separate payment records per product
     await supabaseClient.from('payments').insert({
       user_id: user.id,
       stripe_checkout_session_id: session.id,
       stripe_customer_id: customerId,
-      amount: product.price,
+      amount: totalAmount,
       currency: 'eur',
       status: 'pending',
-      product_id: product.id,
-      product_title: product.title,
+      product_id: requestedProductIds.join(','), // Comma-separated for multiple products
+      product_title: selectedProducts.length === 1 
+        ? selectedProducts[0].title 
+        : `${selectedProducts.length} items`,
       metadata: {
-        product_description: product.description,
-        product_category: product.category,
-        product_image_url: product.imageUrl,
+        product_ids: requestedProductIds,
+        product_count: selectedProducts.length,
+        product_descriptions: selectedProducts.map((p) => p.description).join(' | '),
+        product_categories: selectedProducts.map((p) => p.category).join(', '),
+        product_image_urls: selectedProducts.map((p) => p.imageUrl).join(', '),
       },
     });
 
@@ -236,11 +288,13 @@ serve(async (req) => {
         status: 200,
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating checkout session:', error);
+    console.error('Error stack:', error.stack);
     return new Response(
       JSON.stringify({
-        error: error.message || 'An error occurred',
+        error: error.message || 'An error occurred while creating checkout session',
+        details: error.message,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
