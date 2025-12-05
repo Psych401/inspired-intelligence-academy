@@ -29,7 +29,25 @@ export interface Purchase {
   product_price: number;
   product_category: string;
   product_image_url: string | null;
+  stripe_checkout_session_id: string | null;
   purchased_at: string;
   created_at: string;
+}
+
+export interface Payment {
+  id: string;
+  user_id: string;
+  purchase_id: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
+  stripe_customer_id: string | null;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'canceled' | 'refunded';
+  product_id: string;
+  product_title: string;
+  metadata: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
 }
 

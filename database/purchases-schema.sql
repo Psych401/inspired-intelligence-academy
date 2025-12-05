@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.purchases (
   product_price DECIMAL(10, 2) NOT NULL,
   product_category TEXT NOT NULL,
   product_image_url TEXT,
+  stripe_checkout_session_id TEXT,
   purchased_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );

@@ -55,6 +55,19 @@ Replace `your_project_url_here` and `your_anon_key_here` with the values from St
    - Click "Run"
    - You should see "Success. No rows returned"
 
+7. Create the payments table for Stripe payment tracking:
+   - In the SQL Editor, create a new query
+   - Copy and paste the contents of `database/payments-schema.sql`
+   - Click "Run"
+   - You should see "Success. No rows returned"
+
+8. Update the profiles table to include Stripe customer ID:
+   - In the SQL Editor, run:
+     ```sql
+     ALTER TABLE public.profiles 
+     ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+     ```
+
 ## Step 5: Set Up Storage for Profile Pictures
 
 1. In your Supabase dashboard, go to **Storage**

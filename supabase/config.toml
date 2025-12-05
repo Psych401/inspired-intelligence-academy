@@ -1,0 +1,17 @@
+# Supabase Configuration
+# This file is used by Supabase CLI for local development
+
+[project]
+# Your project reference ID
+# You can find this in your Supabase Dashboard URL
+
+[functions]
+# Edge Functions configuration
+[functions.create-checkout]
+# Function-specific settings can go here
+
+[functions.stripe-webhook]
+# Disable JWT verification - Stripe webhooks don't include JWT tokens
+# Signature verification is handled in the function code using Stripe-Signature header
+verify_jwt = false
+
