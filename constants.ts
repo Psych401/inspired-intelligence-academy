@@ -4,49 +4,10 @@ export const APP_NAME = "Inspired Intelligence Academy";
 export const OWNER_NAME = "Isaac Cronin";
 export const CONTACT_EMAIL = "theinspiredintelligenceacademy@gmail.com";
 
-export const PRODUCTS: Product[] = [
-  {
-    id: '1',
-    title: 'AI for Absolute Beginners',
-    description: 'The ultimate starting point. Learn the basics of ChatGPT and Gemini without the jargon.',
-    price: 49.99,
-    category: ProductCategory.COURSE,
-    imageUrl: 'https://picsum.photos/id/1/600/400',
-    popular: true,
-  },
-  {
-    id: '2',
-    title: 'Everyday Productivity Cheat Sheet',
-    description: 'A handy PDF guide with 50 practical prompts to save you time at home and work.',
-    price: 12.99,
-    category: ProductCategory.GUIDE,
-    imageUrl: 'https://picsum.photos/id/20/600/400',
-  },
-  {
-    id: '3',
-    title: 'The "Friendly Tutor" GPT',
-    description: 'A custom GPT configuration designed to explain complex topics like you are 5 years old.',
-    price: 19.99,
-    category: ProductCategory.GPT,
-    imageUrl: 'https://picsum.photos/id/60/600/400',
-  },
-  {
-    id: '4',
-    title: 'Weekend AI Workshop',
-    description: 'A mini-course designed to get you up and running with image generation in just 2 days.',
-    price: 29.99,
-    category: ProductCategory.MINI_COURSE,
-    imageUrl: 'https://picsum.photos/id/96/600/400',
-  },
-  {
-    id: '5',
-    title: 'The Complete Starter Bundle',
-    description: 'Get the beginner course, the cheat sheet, and the workshop in one discounted package.',
-    price: 79.99,
-    category: ProductCategory.BUNDLE,
-    imageUrl: 'https://picsum.photos/id/201/600/400',
-  },
-];
+// Products are now fetched from Supabase database (synced from Stripe)
+// See app/shop/page.tsx and app/page.tsx for product fetching
+// To add products, create them in Stripe Dashboard - they will automatically sync via webhook
+export const PRODUCTS: Product[] = []; // Deprecated - use database products instead
 
 export const BLOG_POSTS: BlogPost[] = [
   {

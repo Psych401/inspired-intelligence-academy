@@ -5,6 +5,9 @@
  * - checkout.session.completed: When a payment is successful
  * - payment_intent.succeeded: When payment is confirmed
  * - payment_intent.payment_failed: When payment fails
+ * - product.created/updated: Sync products from Stripe to database
+ * - product.deleted: Deactivate products in database
+ * - price.created/updated: Sync product prices
  * 
  * Security:
  * - JWT verification is DISABLED for this function (configured in supabase/config.toml)
@@ -223,14 +226,27 @@ serve(async (req) => {
               ? payment.metadata.product_image_urls.split(', ')
               : [];
 
-            // Product list for fallback (should match create-checkout function)
-            const products: any[] = [
-              { id: '1', title: 'AI for Absolute Beginners', description: 'The ultimate starting point. Learn the basics of ChatGPT and Gemini without the jargon.', price: 49.99, category: 'Full Course', imageUrl: 'https://picsum.photos/id/1/600/400' },
-              { id: '2', title: 'Everyday Productivity Cheat Sheet', description: 'A handy PDF guide with 50 practical prompts to save you time at home and work.', price: 12.99, category: 'PDF Guide', imageUrl: 'https://picsum.photos/id/20/600/400' },
-              { id: '3', title: 'The "Friendly Tutor" GPT', description: 'A custom GPT configuration designed to explain complex topics like you are 5 years old.', price: 19.99, category: 'Custom GPT', imageUrl: 'https://picsum.photos/id/60/600/400' },
-              { id: '4', title: 'Weekend AI Workshop', description: 'A mini-course designed to get you up and running with image generation in just 2 days.', price: 29.99, category: 'Mini-Course', imageUrl: 'https://picsum.photos/id/96/600/400' },
-              { id: '5', title: 'The Complete Starter Bundle', description: 'Get the beginner course, the cheat sheet, and the workshop in one discounted package.', price: 79.99, category: 'Bundle', imageUrl: 'https://picsum.photos/id/201/600/400' },
-            ];
+            // Fetch products from database
+            const { data: dbProducts, error: productsError } = await supabaseClient
+              .from('products')
+              .select('*')
+              .eq('active', true)
+              .in('stripe_product_id', productIds);
+
+            // Create a map of products by stripe_product_id for quick lookup
+            const productsMap = new Map();
+            if (dbProducts) {
+              dbProducts.forEach((dbProduct) => {
+                productsMap.set(dbProduct.stripe_product_id, {
+                  id: dbProduct.stripe_product_id,
+                  title: dbProduct.name,
+                  description: dbProduct.description || '',
+                  price: Number(dbProduct.price),
+                  category: dbProduct.category || '',
+                  imageUrl: dbProduct.image_url || '',
+                });
+              });
+            }
 
             // Create purchase records for each product
             const purchaseRecords = [];
@@ -238,8 +254,8 @@ serve(async (req) => {
             for (let i = 0; i < productIds.length; i++) {
               const productId = productIds[i].trim();
               
-              // Find product details
-              const productFromList = products.find(p => p.id === productId);
+              // Find product details from database
+              const productFromList = productsMap.get(productId);
               
               // Use metadata if available, otherwise use product list
               const productTitle = productFromList?.title || session.metadata.product_titles?.split(', ')[i] || 'Product';
@@ -367,6 +383,134 @@ serve(async (req) => {
             updated_at: new Date().toISOString(),
           })
           .eq('stripe_payment_intent_id', paymentIntent.id);
+
+        break;
+      }
+
+      case 'product.created':
+      case 'product.updated': {
+        const stripeProduct = event.data.object as Stripe.Product;
+        
+        console.log(`Syncing product: ${stripeProduct.id} - ${stripeProduct.name}`);
+
+        // Get the default price for this product
+        let defaultPrice: Stripe.Price | null = null;
+        let priceAmount: number = 0;
+        
+        if (stripeProduct.default_price) {
+          try {
+            if (typeof stripeProduct.default_price === 'string') {
+              defaultPrice = await stripe.prices.retrieve(stripeProduct.default_price);
+            } else {
+              defaultPrice = stripeProduct.default_price;
+            }
+            
+            if (defaultPrice && defaultPrice.unit_amount) {
+              priceAmount = defaultPrice.unit_amount / 100; // Convert from cents
+            }
+          } catch (priceError) {
+            console.error(`Error retrieving price for product ${stripeProduct.id}:`, priceError);
+            // Continue without price - product will sync but price will be 0
+          }
+        }
+
+        // If no price found, try to get first price from product
+        if (priceAmount === 0 && stripeProduct.default_price) {
+          console.warn(`Product ${stripeProduct.id} has no valid price. Price will be set to 0.`);
+        }
+
+        // Get first image URL
+        const imageUrl = stripeProduct.images && stripeProduct.images.length > 0 
+          ? stripeProduct.images[0] 
+          : null;
+
+        // Extract category from metadata or use a default
+        const category = stripeProduct.metadata?.category || stripeProduct.metadata?.Category || '';
+
+        // Upsert product in database
+        const { data: product, error: productError } = await supabaseClient
+          .from('products')
+          .upsert({
+            stripe_product_id: stripeProduct.id,
+            stripe_price_id: defaultPrice?.id || null,
+            name: stripeProduct.name,
+            description: stripeProduct.description || null,
+            price: priceAmount,
+            currency: defaultPrice?.currency || 'eur',
+            category: category,
+            image_url: imageUrl,
+            active: stripeProduct.active,
+            metadata: stripeProduct.metadata || {},
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'stripe_product_id',
+          })
+          .select()
+          .single();
+
+        if (productError) {
+          console.error('Error syncing product:', productError);
+        } else {
+          console.log(`✅ Synced product: ${stripeProduct.name} (${stripeProduct.id})`);
+        }
+
+        break;
+      }
+
+      case 'product.deleted': {
+        const stripeProduct = event.data.object as Stripe.Product;
+        
+        console.log(`Deactivating product: ${stripeProduct.id}`);
+
+        // Mark product as inactive instead of deleting (to preserve purchase history)
+        const { error: updateError } = await supabaseClient
+          .from('products')
+          .update({
+            active: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('stripe_product_id', stripeProduct.id);
+
+        if (updateError) {
+          console.error('Error deactivating product:', updateError);
+        } else {
+          console.log(`✅ Deactivated product: ${stripeProduct.id}`);
+        }
+
+        break;
+      }
+
+      case 'price.created':
+      case 'price.updated': {
+        const stripePrice = event.data.object as Stripe.Price;
+        
+        console.log(`Syncing price: ${stripePrice.id} for product: ${stripePrice.product}`);
+
+        // If this is the default price for a product, update the product
+        if (stripePrice.product && typeof stripePrice.product === 'string') {
+          const stripeProduct = await stripe.products.retrieve(stripePrice.product);
+          
+          // Check if this is the default price
+          if (stripeProduct.default_price === stripePrice.id) {
+            const priceAmount = stripePrice.unit_amount ? stripePrice.unit_amount / 100 : 0;
+
+            const { error: updateError } = await supabaseClient
+              .from('products')
+              .update({
+                stripe_price_id: stripePrice.id,
+                price: priceAmount,
+                currency: stripePrice.currency,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('stripe_product_id', stripeProduct.id);
+
+            if (updateError) {
+              console.error('Error updating product price:', updateError);
+            } else {
+              console.log(`✅ Updated price for product: ${stripeProduct.id}`);
+            }
+          }
+        }
 
         break;
       }

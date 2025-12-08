@@ -131,64 +131,70 @@ serve(async (req) => {
 
     console.log(`Processing checkout for ${requestedProductIds.length} product(s):`, requestedProductIds);
 
-    // Get product details from constants (you may want to store this in database)
-    // For now, we'll use a simple product lookup
-    // In production, you should fetch from your products table
-    const products: Product[] = [
-      {
-        id: '1',
-        title: 'AI for Absolute Beginners',
-        description: 'The ultimate starting point. Learn the basics of ChatGPT and Gemini without the jargon.',
-        price: 49.99,
-        category: 'Full Course',
-        imageUrl: 'https://picsum.photos/id/1/600/400',
-      },
-      {
-        id: '2',
-        title: 'Everyday Productivity Cheat Sheet',
-        description: 'A handy PDF guide with 50 practical prompts to save you time at home and work.',
-        price: 12.99,
-        category: 'PDF Guide',
-        imageUrl: 'https://picsum.photos/id/20/600/400',
-      },
-      {
-        id: '3',
-        title: 'The "Friendly Tutor" GPT',
-        description: 'A custom GPT configuration designed to explain complex topics like you are 5 years old.',
-        price: 19.99,
-        category: 'Custom GPT',
-        imageUrl: 'https://picsum.photos/id/60/600/400',
-      },
-      {
-        id: '4',
-        title: 'Weekend AI Workshop',
-        description: 'A mini-course designed to get you up and running with image generation in just 2 days.',
-        price: 29.99,
-        category: 'Mini-Course',
-        imageUrl: 'https://picsum.photos/id/96/600/400',
-      },
-      {
-        id: '5',
-        title: 'The Complete Starter Bundle',
-        description: 'Get the beginner course, the cheat sheet, and the workshop in one discounted package.',
-        price: 79.99,
-        category: 'Bundle',
-        imageUrl: 'https://picsum.photos/id/201/600/400',
-      },
-    ];
+    // Fetch products from database
+    // Note: productId can be either our internal ID or Stripe product ID
+    // We'll try to match by stripe_product_id first, then by id
+    const { data: dbProducts, error: productsError } = await supabaseClient
+      .from('products')
+      .select('*')
+      .eq('active', true)
+      .in('stripe_product_id', requestedProductIds);
 
-    // Find all requested products
-    const selectedProducts = requestedProductIds
-      .map((id: string) => products.find((p) => p.id === id))
-      .filter((p): p is Product => p !== undefined);
+    // If not found by stripe_product_id, try by id (for backward compatibility)
+    let selectedProducts: any[] = [];
+    
+    if (dbProducts && dbProducts.length > 0) {
+      // Map database products to Product interface
+      selectedProducts = dbProducts.map((dbProduct) => ({
+        id: dbProduct.stripe_product_id,
+        title: dbProduct.name,
+        description: dbProduct.description || '',
+        price: Number(dbProduct.price),
+        category: dbProduct.category || '',
+        imageUrl: dbProduct.image_url || '',
+      }));
+    }
+
+    // If we didn't find all products, try matching by id field (backward compatibility)
+    if (selectedProducts.length < requestedProductIds.length) {
+      const missingIds = requestedProductIds.filter(
+        (id: string) => !selectedProducts.some((p) => p.id === id)
+      );
+      
+      if (missingIds.length > 0) {
+        const { data: dbProductsById, error: productsByIdError } = await supabaseClient
+          .from('products')
+          .select('*')
+          .eq('active', true)
+          .in('id', missingIds);
+
+        if (dbProductsById && dbProductsById.length > 0) {
+          const additionalProducts = dbProductsById.map((dbProduct) => ({
+            id: dbProduct.stripe_product_id,
+            title: dbProduct.name,
+            description: dbProduct.description || '',
+            price: Number(dbProduct.price),
+            category: dbProduct.category || '',
+            imageUrl: dbProduct.image_url || '',
+          }));
+          selectedProducts = [...selectedProducts, ...additionalProducts];
+        }
+      }
+    }
 
     if (selectedProducts.length === 0) {
-      throw new Error('No valid products found');
+      console.error('No products found in database for IDs:', requestedProductIds);
+      throw new Error('No valid products found. Please ensure products are synced from Stripe.');
     }
 
     if (selectedProducts.length !== requestedProductIds.length) {
-      throw new Error('Some products were not found');
+      const foundIds = selectedProducts.map((p) => p.id);
+      const missingIds = requestedProductIds.filter((id) => !foundIds.includes(id));
+      console.error('Some products were not found:', missingIds);
+      throw new Error(`Some products were not found: ${missingIds.join(', ')}`);
     }
+
+    console.log(`Found ${selectedProducts.length} product(s) in database`);
 
     // Get or create Stripe customer
     let customerId: string;
