@@ -25,16 +25,19 @@ export default function MyProducts({ userId }: MyProductsProps) {
   const previousUserIdRef = useRef<string | null>(null);
 
   // Memoize fetchPurchases to prevent unnecessary re-renders
-  const fetchPurchases = useCallback(async () => {
+  const fetchPurchases = useCallback(async (forceRefresh = false) => {
     if (!userId) {
       setPurchases([]);
       setLoading(false);
       return;
     }
 
-    // Clear cache if userId changed
+    // Clear cache if userId changed or if force refresh
     if (previousUserIdRef.current && previousUserIdRef.current !== userId) {
       clearRequestCache(`purchases:${previousUserIdRef.current}`);
+    }
+    if (forceRefresh) {
+      clearRequestCache(`purchases:${userId}`);
     }
     previousUserIdRef.current = userId;
 
@@ -43,16 +46,30 @@ export default function MyProducts({ userId }: MyProductsProps) {
       setError(null);
 
       const cacheKey = `purchases:${userId}`;
-      const data = await deduplicateRequest(cacheKey, async () => {
-        const { data, error: fetchError } = await supabase
+      
+      // If force refresh, bypass cache
+      let data;
+      if (forceRefresh) {
+        const { data: freshData, error: fetchError } = await supabase
           .from('purchases')
           .select('*')
           .eq('user_id', userId)
           .order('purchased_at', { ascending: false });
-
+        
         if (fetchError) throw fetchError;
-        return data || [];
-      });
+        data = freshData || [];
+      } else {
+        data = await deduplicateRequest(cacheKey, async () => {
+          const { data, error: fetchError } = await supabase
+            .from('purchases')
+            .select('*')
+            .eq('user_id', userId)
+            .order('purchased_at', { ascending: false });
+
+          if (fetchError) throw fetchError;
+          return data || [];
+        });
+      }
 
       setPurchases(data);
     } catch (err: any) {
@@ -67,6 +84,34 @@ export default function MyProducts({ userId }: MyProductsProps) {
   useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
+
+  // Expose refresh function via window for external calls (e.g., from checkout success)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).refreshMyProducts = () => {
+        if (userId) {
+          fetchPurchases(true); // Force refresh, bypass cache
+        }
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).refreshMyProducts;
+      }
+    };
+  }, [userId, fetchPurchases]);
+  
+  // Listen for storage events to refresh when purchases are updated from another tab/page
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'purchases-updated' && userId) {
+        fetchPurchases(true);
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [userId, fetchPurchases]);
 
   if (loading) {
     return (

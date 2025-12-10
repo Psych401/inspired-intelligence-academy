@@ -6,6 +6,7 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import MyProducts from '@/components/MyProducts';
@@ -21,6 +22,20 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { user, profile } = useAuth();
+  
+  // Refresh purchases when dashboard loads (in case user navigated from checkout)
+  useEffect(() => {
+    if (user?.id && typeof window !== 'undefined') {
+      // Small delay to ensure MyProducts component is mounted
+      const timer = setTimeout(() => {
+        if ((window as any).refreshMyProducts) {
+          (window as any).refreshMyProducts();
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [user?.id]);
 
   return (
     <div className="min-h-screen bg-brand-white pt-32 pb-20">

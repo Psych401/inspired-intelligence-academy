@@ -181,18 +181,29 @@ serve(async (req) => {
 
         if (payment) {
           // Update payment status
+          const paymentStatus = paymentIntent?.status === 'succeeded' ? 'succeeded' : 
+                               (session.payment_status === 'paid' ? 'succeeded' : 'pending');
+          
           await supabaseClient
             .from('payments')
             .update({
               stripe_payment_intent_id: paymentIntentId,
-              status: paymentIntent?.status === 'succeeded' ? 'succeeded' : 'pending',
+              status: paymentStatus,
               updated_at: new Date().toISOString(),
             })
             .eq('id', payment.id);
 
-          // If payment succeeded, create purchase records
-          if (paymentIntent?.status === 'succeeded' && session.metadata?.user_id) {
-            const userId = session.metadata.user_id;
+          // Get user_id from session metadata or payment record
+          const userId = session.metadata?.user_id || payment.user_id;
+          
+          // Determine if payment succeeded - check multiple conditions
+          const paymentSucceeded = paymentIntent?.status === 'succeeded' || 
+                                  session.payment_status === 'paid' ||
+                                  session.status === 'complete';
+
+          // If payment succeeded and we have a user_id, create purchase records
+          if (paymentSucceeded && userId) {
+            console.log(`Creating purchases for user ${userId}, session ${session.id}`);
             
             // Handle both single product and multiple products (cart checkout)
             // Check for product_ids (new format, always set) first, then fall back to product_id (old format for backward compatibility)
@@ -209,7 +220,24 @@ serve(async (req) => {
 
             if (productIds.length === 0) {
               console.error('No product IDs found in session metadata');
-              break;
+              console.error('Session metadata:', JSON.stringify(session.metadata, null, 2));
+              console.error('Payment metadata:', JSON.stringify(payment.metadata, null, 2));
+              
+              // Try to get product IDs from payment record
+              if (payment.product_id) {
+                const paymentProductIds = payment.product_id.includes(',') 
+                  ? payment.product_id.split(',').map(id => id.trim())
+                  : [payment.product_id.trim()];
+                if (paymentProductIds.length > 0) {
+                  productIds.push(...paymentProductIds);
+                  console.log(`Using product IDs from payment record: ${productIds.join(', ')}`);
+                }
+              }
+              
+              if (productIds.length === 0) {
+                console.error('Still no product IDs found, cannot create purchases');
+                break;
+              }
             }
 
             console.log(`Creating purchase records for ${productIds.length} product(s):`, productIds);
@@ -306,9 +334,21 @@ serve(async (req) => {
 
               if (purchaseError) {
                 console.error(`Error creating purchase for product ${productId}:`, purchaseError);
+                console.error('Purchase data attempted:', JSON.stringify(purchaseData, null, 2));
+                console.error('Error details:', {
+                  message: purchaseError.message,
+                  code: purchaseError.code,
+                  details: purchaseError.details,
+                  hint: purchaseError.hint
+                });
                 
+                // If the error is about RLS policy, try with service role (should already be using it)
                 // If the error is about missing column, try without stripe_checkout_session_id
-                if (purchaseError.message?.includes('stripe_checkout_session_id') || 
+                if (purchaseError.message?.includes('row-level security') || 
+                    purchaseError.message?.includes('RLS') ||
+                    purchaseError.code === '42501') {
+                  console.error('RLS policy error - service role policy may be missing. Please run the migration: database/migrations/add-service-role-policy-to-purchases.sql');
+                } else if (purchaseError.message?.includes('stripe_checkout_session_id') || 
                     purchaseError.code === 'PGRST204') {
                   console.warn('stripe_checkout_session_id column not found, retrying without it');
                   
@@ -329,6 +369,11 @@ serve(async (req) => {
                   
                   if (retryError) {
                     console.error(`Error creating purchase (retry) for product ${productId}:`, retryError);
+                    console.error('Retry error details:', {
+                      message: retryError.message,
+                      code: retryError.code,
+                      details: retryError.details
+                    });
                   } else if (purchaseRetry) {
                     purchaseRecords.push(purchaseRetry);
                     console.log(`✅ Created purchase record for product: ${productTitle}`);
@@ -348,8 +393,24 @@ serve(async (req) => {
                 .eq('id', payment.id);
               
               console.log(`✅ Created ${purchaseRecords.length} purchase record(s) for checkout session ${session.id}`);
+            } else {
+              console.error(`❌ Failed to create any purchase records for checkout session ${session.id}`);
+              console.error('This may be due to:');
+              console.error('1. Missing RLS policy for service role (run database/migrations/add-service-role-policy-to-purchases.sql)');
+              console.error('2. Product IDs not found in metadata');
+              console.error('3. Products not found in database');
+              console.error('4. Database connection issues');
             }
+          } else {
+            console.error('Cannot create purchases: payment not succeeded or user_id missing');
+            console.error('Payment intent status:', paymentIntent?.status);
+            console.error('Session payment status:', session.payment_status);
+            console.error('Session status:', session.status);
+            console.error('User ID from metadata:', session.metadata?.user_id);
+            console.error('User ID from payment:', payment.user_id);
           }
+        } else {
+          console.error(`Payment record not found for checkout session ${session.id}`);
         }
 
         break;
