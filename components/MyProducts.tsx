@@ -6,12 +6,13 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import { Purchase } from '@/types/database';
 import { ShoppingBag, ArrowRight, Package, Calendar } from 'lucide-react';
 import Image from 'next/image';
+import { deduplicateRequest, clearRequestCache } from '@/lib/request-deduplication';
 
 interface MyProductsProps {
   userId: string;
@@ -21,32 +22,51 @@ export default function MyProducts({ userId }: MyProductsProps) {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    fetchPurchases();
-  }, [userId]);
+  // Memoize fetchPurchases to prevent unnecessary re-renders
+  const fetchPurchases = useCallback(async () => {
+    if (!userId) {
+      setPurchases([]);
+      setLoading(false);
+      return;
+    }
 
-  const fetchPurchases = async () => {
+    // Clear cache if userId changed
+    if (previousUserIdRef.current && previousUserIdRef.current !== userId) {
+      clearRequestCache(`purchases:${previousUserIdRef.current}`);
+    }
+    previousUserIdRef.current = userId;
+
     try {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('purchases')
-        .select('*')
-        .eq('user_id', userId)
-        .order('purchased_at', { ascending: false });
+      const cacheKey = `purchases:${userId}`;
+      const data = await deduplicateRequest(cacheKey, async () => {
+        const { data, error: fetchError } = await supabase
+          .from('purchases')
+          .select('*')
+          .eq('user_id', userId)
+          .order('purchased_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
+        if (fetchError) throw fetchError;
+        return data || [];
+      });
 
-      setPurchases(data || []);
+      setPurchases(data);
     } catch (err: any) {
       console.error('Error fetching purchases:', err);
       setError('Failed to load your purchases. Please try again.');
+      setPurchases([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    fetchPurchases();
+  }, [fetchPurchases]);
 
   if (loading) {
     return (

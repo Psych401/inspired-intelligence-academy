@@ -1,87 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { ProductCategory } from '@/types';
 import ProductCard from '@/components/ProductCard';
-import { supabase } from '@/lib/supabase/client';
-import { Product } from '@/types';
+import { useProducts } from '@/hooks/useProducts';
 
 export default function Shop() {
   const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      console.log('Fetching products from database...');
-
-      // Fetch active products from database
-      const { data, error: fetchError } = await supabase
-        .from('products')
-        .select('*')
-        .eq('active', true)
-        .order('created_at', { ascending: false });
-
-      if (fetchError) {
-        console.error('Supabase query error:', fetchError);
-        console.error('Error code:', fetchError.code);
-        console.error('Error message:', fetchError.message);
-        console.error('Error details:', fetchError.details);
-        throw fetchError;
-      }
-
-      console.log('Products fetched:', data?.length || 0, 'products');
-      console.log('Raw products data:', data);
-
-      if (!data || data.length === 0) {
-        console.warn('No products found in database. Make sure:');
-        console.warn('1. Products table exists (run database/products-schema.sql)');
-        console.warn('2. Products have been synced from Stripe (check webhook or run manual sync)');
-        console.warn('3. Products are marked as active in database');
-        setProducts([]);
-        return;
-      }
-
-      // Transform database products to Product interface
-      const transformedProducts: Product[] = (data || []).map((dbProduct) => ({
-        id: dbProduct.stripe_product_id, // Use Stripe product ID as the ID
-        title: dbProduct.name,
-        description: dbProduct.description || '',
-        price: Number(dbProduct.price),
-        category: (dbProduct.category as ProductCategory) || ProductCategory.COURSE,
-        imageUrl: dbProduct.image_url || '',
-        popular: dbProduct.metadata?.popular === true || false,
-      }));
-
-      console.log('Transformed products:', transformedProducts.length);
-      setProducts(transformedProducts);
-    } catch (err: any) {
-      console.error('Error fetching products:', err);
-      const errorMessage = err.message || 'Failed to load products.';
-      const detailedError = err.code 
-        ? `${errorMessage} (Code: ${err.code})` 
-        : errorMessage;
-      setError(detailedError);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { products: allProducts, loading, error, refetch } = useProducts();
 
   // Get unique categories from products
-  const availableCategories = ['All', ...new Set(products.map(p => p.category))];
+  const availableCategories = useMemo(() => {
+    const categories = new Set(allProducts.map(p => p.category));
+    return ['All', ...Array.from(categories)];
+  }, [allProducts]);
+  
   const categories = availableCategories.length > 1 ? availableCategories : ['All'];
 
-  const filteredProducts = activeCategory === 'All' 
-    ? products 
-    : products.filter(p => p.category === activeCategory);
+  // Filter products by category
+  const filteredProducts = useMemo(() => {
+    if (activeCategory === 'All') {
+      return allProducts;
+    }
+    return allProducts.filter(p => p.category === activeCategory);
+  }, [allProducts, activeCategory]);
 
   return (
     <div className="min-h-screen bg-brand-white pb-12 pt-32">
@@ -103,7 +45,7 @@ export default function Shop() {
           <div className="text-center py-20">
             <p className="text-red-600 mb-4">{error}</p>
             <button
-              onClick={fetchProducts}
+              onClick={refetch}
               className="px-6 py-2 bg-brand-indigo text-white rounded-lg font-semibold hover:bg-brand-blue transition-colors"
             >
               Try Again
@@ -153,7 +95,7 @@ export default function Shop() {
                       Make sure the product webhook events are configured in Stripe Dashboard.
                     </p>
                     <button
-                      onClick={fetchProducts}
+                      onClick={refetch}
                       className="mt-4 px-4 py-2 bg-brand-indigo text-white rounded-lg text-sm font-semibold hover:bg-brand-blue transition-colors"
                     >
                       Refresh Products

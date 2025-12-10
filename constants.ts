@@ -1,4 +1,4 @@
-import { Product, ProductCategory, BlogPost, Testimonial } from './types';
+import { BlogPost, Testimonial } from './types';
 
 export const APP_NAME = "Inspired Intelligence Academy";
 export const OWNER_NAME = "Isaac Cronin";
@@ -7,7 +7,6 @@ export const CONTACT_EMAIL = "theinspiredintelligenceacademy@gmail.com";
 // Products are now fetched from Supabase database (synced from Stripe)
 // See app/shop/page.tsx and app/page.tsx for product fetching
 // To add products, create them in Stripe Dashboard - they will automatically sync via webhook
-export const PRODUCTS: Product[] = []; // Deprecated - use database products instead
 
 export const BLOG_POSTS: BlogPost[] = [
   {

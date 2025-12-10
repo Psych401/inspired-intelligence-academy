@@ -7,10 +7,11 @@
 
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { Profile } from '@/types/database';
+import { deduplicateRequest, clearRequestCache } from '@/lib/request-deduplication';
 
 interface AuthContextType {
   user: User | null;
@@ -33,17 +34,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const isInitializing = useRef(false);
+  const previousUserIdRef = useRef<string | null>(null);
 
-  // Fetch user profile from database
+  // Fetch user profile from database with deduplication
   const fetchProfile = async (userId: string) => {
+    const cacheKey = `profile:${userId}`;
+    
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const data = await deduplicateRequest(cacheKey, async () => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
+        return data;
+      });
+
       setProfile(data);
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -53,11 +62,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    if (isInitializing.current) return;
+    isInitializing.current = true;
+
+    let hasInitialSession = false;
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        hasInitialSession = true;
         fetchProfile(session.user.id);
       }
       setLoading(false);
@@ -70,16 +85,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       
+      // Skip profile fetch if this is the initial session event (already handled by getSession)
+      // Only fetch on actual auth state changes (SIGNED_IN, SIGNED_OUT, etc.)
+      if (event === 'INITIAL_SESSION' && hasInitialSession) {
+        return;
+      }
+      
       if (session?.user) {
         await fetchProfile(session.user.id);
+        previousUserIdRef.current = session.user.id;
       } else {
         setProfile(null);
+        // Clear profile cache when user signs out
+        const previousUserId = previousUserIdRef.current;
+        if (previousUserId) {
+          clearRequestCache(`profile:${previousUserId}`);
+          previousUserIdRef.current = null;
+        }
       }
       
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      isInitializing.current = false;
+    };
   }, []);
 
   // Sign up with email and password
@@ -197,29 +228,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // After successful login, ensure profile exists
     // This handles cases where profile creation failed during signup
+    // Use deduplication to prevent duplicate calls with onAuthStateChange
     if (data.user) {
       try {
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        // If profile doesn't exist, create a basic one
-        if (!existingProfile) {
-          const username = data.user.user_metadata?.username || `user_${data.user.id.substring(0, 8)}`;
-          const fullName = data.user.user_metadata?.full_name || '';
-          
-          await supabase
+        const cacheKey = `profile-check:${data.user.id}`;
+        await deduplicateRequest(cacheKey, async () => {
+          const { data: existingProfile } = await supabase
             .from('profiles')
-            .upsert({
-              id: data.user.id,
-              username,
-              full_name: fullName,
-            }, {
-              onConflict: 'id',
-            });
-        }
+            .select('id')
+            .eq('id', data.user.id)
+            .maybeSingle();
+
+          // If profile doesn't exist, create a basic one
+          if (!existingProfile) {
+            const username = data.user.user_metadata?.username || `user_${data.user.id.substring(0, 8)}`;
+            const fullName = data.user.user_metadata?.full_name || '';
+            
+            await supabase
+              .from('profiles')
+              .upsert({
+                id: data.user.id,
+                username,
+                full_name: fullName,
+              }, {
+                onConflict: 'id',
+              });
+          }
+          return existingProfile;
+        });
       } catch (profileErr) {
         // Non-critical - profile can be created later
         console.warn('Profile check/creation during login had an issue:', profileErr);
@@ -277,6 +313,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Refresh profile data
   const refreshProfile = async (): Promise<void> => {
     if (user) {
+      // Clear cache before refreshing to force a new fetch
+      clearRequestCache(`profile:${user.id}`);
       await fetchProfile(user.id);
     }
   };

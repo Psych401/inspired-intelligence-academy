@@ -34,13 +34,18 @@ export default function RecoverProfilePage() {
 
     try {
       const { supabase } = await import('@/lib/supabase/client');
+      const { deduplicateRequest } = await import('@/lib/request-deduplication');
       
-      // Check if profile exists
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
+      // Check if profile exists (with deduplication)
+      const cacheKey = `profile-check:${user.id}`;
+      const existingProfile = await deduplicateRequest(cacheKey, async () => {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+        return data;
+      });
 
       if (existingProfile) {
         // Profile exists, just refresh

@@ -1,52 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight, CheckCircle2, Star, Shield, Brain, Heart, MessageCircleQuestion } from 'lucide-react';
 import { TESTIMONIALS } from '@/constants';
 import ProductCard from '@/components/ProductCard';
-import { supabase } from '@/lib/supabase/client';
-import { Product, ProductCategory } from '@/types';
+import { useProducts } from '@/hooks/useProducts';
 
 export default function Home() {
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchFeaturedProducts();
-  }, []);
-
-  const fetchFeaturedProducts = async () => {
-    try {
-      // Fetch first 3 active products from database
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('active', true)
-        .order('created_at', { ascending: false })
-        .limit(3);
-
-      if (error) throw error;
-
-      // Transform database products to Product interface
-      const transformedProducts: Product[] = (data || []).map((dbProduct) => ({
-        id: dbProduct.stripe_product_id,
-        title: dbProduct.name,
-        description: dbProduct.description || '',
-        price: Number(dbProduct.price),
-        category: (dbProduct.category as ProductCategory) || ProductCategory.COURSE,
-        imageUrl: dbProduct.image_url || '',
-        popular: dbProduct.metadata?.popular === true || false,
-      }));
-
-      setFeaturedProducts(transformedProducts);
-    } catch (err) {
-      console.error('Error fetching featured products:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { products: featuredProducts, loading } = useProducts({ limit: 3 });
 
   return (
     <div className="flex flex-col min-h-screen pt-28">
