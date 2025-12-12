@@ -132,7 +132,7 @@ export default function MyProducts({ userId }: MyProductsProps) {
         <div className="text-center py-8">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={fetchPurchases}
+            onClick={() => fetchPurchases(true)}
             className="px-4 py-2 bg-brand-indigo text-white rounded-lg font-semibold hover:bg-brand-blue transition-colors"
           >
             Try Again
