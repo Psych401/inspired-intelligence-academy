@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { CheckCircle2, Package, ArrowRight, Loader2 } from 'lucide-react';
@@ -14,14 +14,6 @@ import { getCheckoutSession } from '@/lib/stripe';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-
-export default function CheckoutSuccessPage() {
-  return (
-    <ProtectedRoute>
-      <CheckoutSuccessContent />
-    </ProtectedRoute>
-  );
-}
 
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
@@ -369,6 +361,23 @@ function CheckoutSuccessContent() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CheckoutSuccessPage() {
+  return (
+    <ProtectedRoute>
+      <Suspense fallback={
+        <div className="min-h-screen bg-brand-white pt-32 pb-20 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-brand-indigo mx-auto mb-4" />
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
+      }>
+        <CheckoutSuccessContent />
+      </Suspense>
+    </ProtectedRoute>
   );
 }
 
