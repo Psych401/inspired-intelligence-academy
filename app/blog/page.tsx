@@ -189,8 +189,6 @@ export default function Blog() {
             </Link>
           </div>
         </div>
-          </div>
-        )}
 
         <div className="mt-16 bg-brand-indigo rounded-2xl p-10 md:p-16 text-center text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-brand-blue rounded-full filter blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2"></div>
