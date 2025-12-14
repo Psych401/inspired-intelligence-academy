@@ -23,6 +23,9 @@ export interface BlogPost {
   date: string;
   imageUrl: string;
   readTime: string;
+  slug?: string;
+  uri?: string;
+  link?: string; // Full URL to the WordPress post
 }
 
 export interface Testimonial {

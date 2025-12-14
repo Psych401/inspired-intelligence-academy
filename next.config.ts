@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'files.stripe.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'inspiredintelligenceacademy.com',
+      }
     ],
   },
 };
