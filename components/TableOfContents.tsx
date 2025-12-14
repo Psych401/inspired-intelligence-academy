@@ -7,7 +7,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Hash } from 'lucide-react';
+import { Hash, ChevronDown, ChevronUp } from 'lucide-react';
 import { extractHeadings } from '@/lib/blog-content';
 
 interface TocItem {
@@ -18,11 +18,13 @@ interface TocItem {
 
 interface TableOfContentsProps {
   content: string;
+  mobile?: boolean;
 }
 
-export default function TableOfContents({ content }: TableOfContentsProps) {
+export default function TableOfContents({ content, mobile = false }: TableOfContentsProps) {
   const [tocItems, setTocItems] = useState<TocItem[]>([]);
   const [activeId, setActiveId] = useState<string>('');
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     if (!content) return;
@@ -77,35 +79,84 @@ export default function TableOfContents({ content }: TableOfContentsProps) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Hash size={18} className="text-brand-indigo" />
-        <h3 className="font-heading font-bold text-lg text-brand-indigo">Table of Contents</h3>
-      </div>
-      <nav className="space-y-2">
-        {tocItems.map((item) => (
-          <a
-            key={item.id}
-            href={`#${item.id}`}
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToHeading(item.id);
-            }}
-            className={`block text-sm transition-colors ${
-              item.level === 1
-                ? 'font-semibold text-brand-indigo'
-                : item.level === 2
-                ? 'font-medium text-gray-700 ml-4'
-                : 'text-gray-600 ml-8'
-            } ${
-              activeId === item.id
-                ? 'text-brand-blue border-l-2 border-brand-blue pl-3'
-                : 'hover:text-brand-blue pl-3'
-            }`}
+      {mobile ? (
+        <>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="flex items-center justify-between w-full mb-4"
           >
-            {item.text}
-          </a>
-        ))}
-      </nav>
+            <div className="flex items-center gap-2">
+              <Hash size={18} className="text-brand-indigo" />
+              <h3 className="font-heading font-bold text-lg text-brand-indigo">Table of Contents</h3>
+            </div>
+            {isOpen ? (
+              <ChevronUp size={20} className="text-brand-indigo" />
+            ) : (
+              <ChevronDown size={20} className="text-brand-indigo" />
+            )}
+          </button>
+          {isOpen && (
+            <nav className="space-y-2 max-h-96 overflow-y-auto">
+              {tocItems.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    scrollToHeading(item.id);
+                    setIsOpen(false);
+                  }}
+                  className={`block text-sm transition-colors ${
+                    item.level === 1
+                      ? 'font-semibold text-brand-indigo'
+                      : item.level === 2
+                      ? 'font-medium text-gray-700 ml-4'
+                      : 'text-gray-600 ml-8'
+                  } ${
+                    activeId === item.id
+                      ? 'text-brand-blue border-l-2 border-brand-blue pl-3'
+                      : 'hover:text-brand-blue pl-3'
+                  }`}
+                >
+                  {item.text}
+                </a>
+              ))}
+            </nav>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-4">
+            <Hash size={18} className="text-brand-indigo" />
+            <h3 className="font-heading font-bold text-lg text-brand-indigo">Table of Contents</h3>
+          </div>
+          <nav className="space-y-2">
+            {tocItems.map((item) => (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollToHeading(item.id);
+                }}
+                className={`block text-sm transition-colors ${
+                  item.level === 1
+                    ? 'font-semibold text-brand-indigo'
+                    : item.level === 2
+                    ? 'font-medium text-gray-700 ml-4'
+                    : 'text-gray-600 ml-8'
+                } ${
+                  activeId === item.id
+                    ? 'text-brand-blue border-l-2 border-brand-blue pl-3'
+                    : 'hover:text-brand-blue pl-3'
+                }`}
+              >
+                {item.text}
+              </a>
+            ))}
+          </nav>
+        </>
+      )}
     </div>
   );
 }

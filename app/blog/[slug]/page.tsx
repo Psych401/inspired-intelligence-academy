@@ -98,7 +98,7 @@ function BlogPostContent() {
 
   return (
     <div className="min-h-screen bg-brand-white pb-20 pt-32">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Back Button */}
         <Link
           href="/blog"
@@ -154,19 +154,26 @@ function BlogPostContent() {
             )}
           </header>
 
-          {/* Table of Contents and Content */}
-          <div className="grid lg:grid-cols-4 gap-8">
-            {/* Table of Contents Sidebar */}
-            <aside className="lg:col-span-1">
-              <div className="sticky top-32">
-                <TableOfContents content={post.content || ''} />
-              </div>
-            </aside>
+          {/* Mobile Table of Contents (Collapsible) */}
+          <div className="lg:hidden mb-8">
+            <TableOfContents content={post.content || ''} mobile />
+          </div>
 
+          {/* Table of Contents and Content */}
+          <div className="grid lg:grid-cols-12 gap-8">
             {/* Main Content */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-8">
               <BlogContent content={post.content || ''} />
             </div>
+
+            {/* Table of Contents Sidebar (Right Side) */}
+            <aside className="lg:col-span-4">
+              <div className="sticky top-32">
+                <div className="hidden lg:block">
+                  <TableOfContents content={post.content || ''} />
+                </div>
+              </div>
+            </aside>
           </div>
         </article>
 
