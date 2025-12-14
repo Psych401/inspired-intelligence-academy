@@ -18,10 +18,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // GraphQL query to fetch posts
+    // Get query parameters for filtering
+    const { searchParams } = new URL(request.url);
+    const category = searchParams.get('category');
+    const exclude = searchParams.get('exclude');
+    const limit = parseInt(searchParams.get('limit') || '100');
+
+    // Build where clause for filtering
+    const whereParts: string[] = ['orderby: { field: DATE, order: DESC }', 'status: PUBLISH'];
+    if (category) {
+      whereParts.push(`categoryName: "${category}"`);
+    }
+    if (exclude) {
+      whereParts.push(`notIn: ["${exclude}"]`);
+    }
+    const whereClause = whereParts.join(', ');
+
+    // Conditionally include categories query only if not filtering
+    const includeCategories = !category && !exclude;
+
+    // GraphQL query to fetch posts with categories, authors, and other metadata
     const query = `
       query GetPosts {
-        posts(first: 100, where: { orderby: { field: DATE, order: DESC }, status: PUBLISH }) {
+        posts(first: ${limit}, where: { ${whereClause} }) {
           nodes {
             id
             title
@@ -39,8 +58,32 @@ export async function GET(request: NextRequest) {
             content
             slug
             uri
+            categories {
+              nodes {
+                id
+                name
+                slug
+              }
+            }
+            author {
+              node {
+                id
+                name
+                slug
+              }
+            }
           }
         }
+        ${includeCategories ? `
+        categories(first: 100) {
+          nodes {
+            id
+            name
+            slug
+            count
+          }
+        }
+        ` : ''}
       }
     `;
 

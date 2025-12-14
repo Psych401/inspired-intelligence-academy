@@ -7,6 +7,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BlogPost } from '@/types';
 
+interface WordPressCategory {
+  id: string;
+  name: string;
+  slug: string;
+  count?: number;
+}
+
+interface WordPressAuthor {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface WordPressPost {
   id: string;
   title: string;
@@ -25,6 +38,12 @@ interface WordPressPost {
   readingTime?: number;
   slug?: string;
   uri?: string;
+  categories?: {
+    nodes?: WordPressCategory[];
+  };
+  author?: {
+    node?: WordPressAuthor;
+  };
 }
 
 interface WordPressResponse {
@@ -56,8 +75,23 @@ function formatDate(dateString: string): string {
   });
 }
 
+export interface BlogCategory {
+  id: string;
+  name: string;
+  slug: string;
+  count: number;
+}
+
+export interface BlogAuthor {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export function useWordPressPosts() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [categories, setCategories] = useState<BlogCategory[]>([]);
+  const [authors, setAuthors] = useState<BlogAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,10 +152,39 @@ export function useWordPressPosts() {
           slug: post.slug,
           uri: post.uri,
           link: post.uri && siteUrl ? `${siteUrl}${post.uri}` : undefined,
+          categories: post.categories?.nodes?.map(cat => ({
+            id: cat.id,
+            name: cat.name,
+            slug: cat.slug,
+          })) || [],
+          author: post.author?.node ? {
+            id: post.author.node.id,
+            name: post.author.node.name,
+            slug: post.author.node.slug,
+          } : undefined,
         };
       });
 
+      // Transform categories
+      const transformedCategories: BlogCategory[] = (result.categories?.nodes || []).map((cat: WordPressCategory) => ({
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        count: cat.count || 0,
+      }));
+
+      // Extract unique authors from posts
+      const authorsMap = new Map<string, BlogAuthor>();
+      transformedPosts.forEach(post => {
+        if (post.author && !authorsMap.has(post.author.id)) {
+          authorsMap.set(post.author.id, post.author);
+        }
+      });
+      const transformedAuthors = Array.from(authorsMap.values());
+
       setPosts(transformedPosts);
+      setCategories(transformedCategories);
+      setAuthors(transformedAuthors);
     } catch (err: any) {
       console.error('Error fetching WordPress posts:', err);
       setError(err.message || 'Failed to load blog posts');
@@ -135,6 +198,6 @@ export function useWordPressPosts() {
     fetchPosts();
   }, [fetchPosts]);
 
-  return { posts, loading, error, refetch: fetchPosts };
+  return { posts, categories, authors, loading, error, refetch: fetchPosts };
 }
 

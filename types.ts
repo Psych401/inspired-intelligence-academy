@@ -16,6 +16,18 @@ export interface Product {
   popular?: boolean;
 }
 
+export interface BlogCategory {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface BlogAuthor {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface BlogPost {
   id: string;
   title: string;
@@ -26,6 +38,9 @@ export interface BlogPost {
   slug?: string;
   uri?: string;
   link?: string; // Full URL to the WordPress post
+  categories?: BlogCategory[];
+  author?: BlogAuthor;
+  content?: string; // Full post content for detail pages
 }
 
 export interface Testimonial {
