@@ -23,13 +23,13 @@ interface WordPressPost {
   };
   content?: string;
   readingTime?: number;
+  slug?: string;
+  uri?: string;
 }
 
 interface WordPressResponse {
-  data?: {
-    posts?: {
-      nodes?: WordPressPost[];
-    };
+  posts?: {
+    nodes?: WordPressPost[];
   };
   errors?: Array<{ message: string }>;
 }
@@ -67,63 +67,31 @@ export function useWordPressPosts() {
       setError(null);
 
       // Try both environment variable names for flexibility
-      const graphqlUrl = process.env.NEXT_PUBLIC_WORDPRESS_GRAPHQL_URL || process.env.WORDPRESS_GRAPHQL_URL;
-      
-      if (!graphqlUrl) {
-        throw new Error('WORDPRESS_GRAPHQL_URL or NEXT_PUBLIC_WORDPRESS_GRAPHQL_URL is not configured in .env.local');
-      }
+      // Use Next.js API route to proxy WordPress requests (avoids CORS issues)
+      const apiUrl = '/api/wordpress/posts';
 
-      // GraphQL query to fetch posts
-      // This query works with WPGraphQL plugin for WordPress
-      const query = `
-        query GetPosts {
-          posts(first: 100, where: { orderby: { field: DATE, order: DESC }, status: PUBLISH }) {
-            nodes {
-              id
-              title
-              excerpt
-              date
-              featuredImage {
-                node {
-                  sourceUrl
-                  mediaDetails {
-                    width
-                    height
-                  }
-                }
-              }
-              content
-              slug
-              uri
-            }
-          }
-        }
-      `;
-
-      const response = await fetch(graphqlUrl, {
-        method: 'POST',
+      const response = await fetch(apiUrl, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query }),
+        // Add cache control
+        cache: 'no-store', // Always fetch fresh data on client
       });
 
       if (!response.ok) {
-        throw new Error(`WordPress API error: ${response.status} ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status} ${response.statusText}`);
       }
 
-      const result: WordPressResponse = await response.json();
+      const result = await response.json();
 
-      if (result.errors) {
-        throw new Error(result.errors.map(e => e.message).join(', '));
-      }
-
-      if (!result.data?.posts?.nodes) {
+      if (!result.posts?.nodes) {
         throw new Error('No posts data returned from WordPress');
       }
 
       // Transform WordPress posts to BlogPost format
-      const transformedPosts: BlogPost[] = result.data.posts.nodes.map((post) => {
+      const transformedPosts: BlogPost[] = result.posts.nodes.map((post: WordPressPost) => {
         // Get excerpt - WordPress returns HTML, so we need to strip tags
         const excerptText = post.excerpt
           ? post.excerpt.replace(/<[^>]*>/g, '').trim()
@@ -137,9 +105,8 @@ export function useWordPressPosts() {
           ? calculateReadingTime(post.content.replace(/<[^>]*>/g, ''))
           : '5 min read';
 
-        // Extract WordPress site URL from GraphQL URL to build post links
-        const graphqlUrl = process.env.NEXT_PUBLIC_WORDPRESS_GRAPHQL_URL || process.env.WORDPRESS_GRAPHQL_URL || '';
-        const siteUrl = graphqlUrl.replace('/graphql', '').replace('/wp-json', '');
+        // Get site URL from API response
+        const siteUrl = (result as any).siteUrl || '';
         
         return {
           id: post.id,
@@ -148,9 +115,9 @@ export function useWordPressPosts() {
           date: formatDate(post.date),
           imageUrl: imageUrl,
           readTime: readTime,
-          slug: (post as any).slug,
-          uri: (post as any).uri,
-          link: (post as any).uri ? `${siteUrl}${(post as any).uri}` : undefined,
+          slug: post.slug,
+          uri: post.uri,
+          link: post.uri && siteUrl ? `${siteUrl}${post.uri}` : undefined,
         };
       });
 
