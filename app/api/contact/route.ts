@@ -64,98 +64,53 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Nodemailer transporter with Hostinger SMTP
-    // Try port 465 first (SSL), fallback to 587 (STARTTLS) if needed
-    let transporter: nodemailer.Transporter;
-    let connectionSuccessful = false;
-    let lastError: any = null;
-
-    // Configuration for port 465 (SSL)
-    const config465 = {
+    // Use port 465 with SSL (standard for Hostinger)
+    const transporter = nodemailer.createTransport({
       host: 'smtp.hostinger.com',
       port: 465,
-      secure: true,
+      secure: true, // true for 465, false for other ports
       auth: {
         user: emailUser,
         pass: emailPass,
       },
       tls: {
+        // Do not fail on invalid certs (some servers have self-signed certs)
         rejectUnauthorized: false,
       },
-      connectionTimeout: 10000,
-      socketTimeout: 10000,
-      debug: process.env.NODE_ENV === 'development',
-      logger: process.env.NODE_ENV === 'development',
-    };
+    });
 
-    // Configuration for port 587 (STARTTLS)
-    const config587 = {
-      host: 'smtp.hostinger.com',
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      auth: {
-        user: emailUser,
-        pass: emailPass,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-      connectionTimeout: 10000,
-      socketTimeout: 10000,
-      debug: process.env.NODE_ENV === 'development',
-      logger: process.env.NODE_ENV === 'development',
-    };
-
-    // Try port 465 first
-    console.log('Attempting SMTP connection on port 465 (SSL)...');
-    transporter = nodemailer.createTransport(config465);
-    
+    // Verify transporter configuration
     try {
+      console.log('Verifying SMTP connection...');
       await transporter.verify();
-      console.log('SMTP connection verified successfully on port 465');
-      connectionSuccessful = true;
+      console.log('SMTP connection verified successfully');
     } catch (verifyError: any) {
-      console.warn('Port 465 connection failed, trying port 587 (STARTTLS)...', {
+      console.error('SMTP verification failed:', {
         code: verifyError.code,
+        command: verifyError.command,
         message: verifyError.message,
       });
-      lastError = verifyError;
-      
-      // Try port 587 as fallback
-      transporter = nodemailer.createTransport(config587);
-      try {
-        await transporter.verify();
-        console.log('SMTP connection verified successfully on port 587');
-        connectionSuccessful = true;
-      } catch (verifyError587: any) {
-        console.error('Both SMTP ports failed:', {
-          port465: { code: lastError.code, message: lastError.message },
-          port587: { code: verifyError587.code, message: verifyError587.message },
-        });
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: 'Email service configuration error. Please check your SMTP settings and credentials.',
-            details: process.env.NODE_ENV === 'development' 
-              ? `Port 465: ${lastError.message}; Port 587: ${verifyError587.message}` 
-              : undefined
-          },
-          { status: 500 }
-        );
-      }
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Email service configuration error. Please check your SMTP credentials.',
+          details: process.env.NODE_ENV === 'development' ? verifyError.message : undefined
+        },
+        { status: 500 }
+      );
     }
 
-    // Email content - formatted to trigger auto-responses
+    // Email content - send to contact email
+    // Note: Auto-responses typically trigger when email is received from external senders
+    // The email will be delivered to your inbox, and Hostinger's auto-response should trigger
     const mailOptions = {
-      from: `"${sanitizedName}" <${emailUser}>`, // Use name in from field
-      to: emailUser, // Send to the same email address
-      replyTo: sanitizedEmail, // Set reply-to to user's email
+      from: emailUser, // Authenticated sender (required for SMTP)
+      to: emailUser, // Send to contact email
+      replyTo: sanitizedEmail, // Reply-to set to user's email so you can reply directly
       subject: `New Contact Form Message from ${sanitizedName}`,
-      // Add headers to help with auto-responses
+      // Standard headers
       headers: {
-        'X-Priority': '3',
-        'X-MSMail-Priority': 'Normal',
-        'Importance': 'normal',
+        'X-Mailer': 'Inspired Intelligence Academy Contact Form',
       },
       html: `
         <!DOCTYPE html>
@@ -200,8 +155,7 @@ Reply directly to this email to respond to ${sanitizedName} at ${sanitizedEmail}
     };
 
     // Send email
-    console.log('Attempting to send email...', {
-      from: mailOptions.from,
+    console.log('Sending email...', {
       to: mailOptions.to,
       replyTo: mailOptions.replyTo,
       subject: mailOptions.subject,
@@ -215,8 +169,30 @@ Reply directly to this email to respond to ${sanitizedName} at ${sanitizedEmail}
       response: info.response,
       accepted: info.accepted,
       rejected: info.rejected,
-      to: emailUser,
     });
+
+    // Check if email was accepted
+    if (info.rejected && info.rejected.length > 0) {
+      console.error('Email was rejected:', info.rejected);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Email was rejected by the server. Please check your email configuration.',
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!info.accepted || info.accepted.length === 0) {
+      console.error('Email was not accepted by server');
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Email was not accepted by the server. Please try again.',
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       { success: true, message: 'Email sent successfully' },
